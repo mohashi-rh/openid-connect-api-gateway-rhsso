@@ -1,5 +1,6 @@
 local ts = require 'threescale_utils'
-local jwt = require "resty.jwt"
+local jwt = require 'resty.jwt'
+local rhsso = require 'rhsso_config'
 
 _M = {}
 
@@ -41,123 +42,96 @@ local function request_token()
   return { ["status"] = res.status, ["body"] = res.body }
 end
 
-local function error_jwt_verification_failed(service)
-  ngx.status = service.auth_missing_status
-  ngx.header.content_type = service.auth_missing_headers
-  ngx.print(service.error_auth_missing)
+local function error_jwt_verification_failed(service, reason)
+  ngx.status = service.auth_failed_status
+  ngx.header.content_type = service.auth_failed_headers
+  ngx.print(service.error_auth_failed .. ': '.. reason)
   ngx.exit(ngx.HTTP_OK)
 end
 
 -- Parses the token - in this case we assume it's a JWT token
 -- Here we can extract authenticated user's claims or other information returned in the access_token
 -- or id_token by RH SSO
-local function parse_token(token)
-  local token_obj = cjson.decode(token)
-  
-  local jwt_token = token_obj.access_token
-  local header, body, signature = jwt_token:match("([^.]+).([^.]+).([^.]+)")
-
-  -- Parse the JWT body to extract user's claims
-  local payload = cjson.decode(ngx.decode_base64(body))
-
-  return token_obj
-end
-
--- Stores the token in 3scale. You can change the default ttl value of 604800 seconds (7 days) to your desired ttl.
-local function store_token(params, token)
-  local body = ts.build_query({ app_id = params.client_id, token = token.access_token, user_id = params.user_id, ttl = token.expires_in })
-  local stored = ngx.location.capture( "/_threescale/oauth_store_token", { method = ngx.HTTP_POST, body = body } )
-  stored.body = stored.body or stored.status
-  return { ["status"] = stored.status , ["body"] = stored.body }
-end
-
--- Returns the token to the client
-local function send_token(token)
-  ngx.header.content_type = "application/json; charset=utf-8"
-  ngx.say(cjson.encode(token))
-  ngx.exit(ngx.HTTP_OK)
-end
-
--- Get the token from the OAuth Server
-local function get_token_idp(params)
-  local access_token_required_params = {'client_id', 'client_secret', 'grant_type', 'code', 'redirect_uri'}
-  local refresh_token_required_params =  {'client_id', 'client_secret', 'grant_type', 'refresh_token'}
-
-  local res = {}
-
-  if (ts.required_params_present(access_token_required_params, params) and params['grant_type'] == 'authorization_code') or 
-    (ts.required_params_present(refresh_token_required_params, params) and params['grant_type'] == 'refresh_token') then
-    res = request_token(params)
-  else
-    res = { ["status"] = 403, ["body"] = '{"error": "invalid_request"}' }
+local function parse_and_verify_token(service, jwt_token)
+  local jwt_obj = jwt:verify(rhsso.public_key, jwt_token)
+  if not jwt_obj.verified then
+    ngx.log(ngx.INFO, "[jwt] failed verification for token: "..jwt_token)
+    error_jwt_verification_failed(service, jwt_obj.reason)
   end
-
-  if res.status ~= 200 then
-    ngx.status = res.status
-    ngx.header.content_type = "application/json; charset=utf-8"
-    ngx.print(res.body)
-    ngx.exit(ngx.HTTP_FORBIDDEN)
-  else
-    local token = parse_token(res.body)
-    local stored = store_token(params, token)
-    
-    if stored.status ~= 200 then
-      ngx.log(ngx.ERR, 'The token provided by RH-SSO could not be stored in 3scale backend')
-      ngx.status = stored.status
-      ngx.say('{"error":"'..stored.body..'"}')
-      ngx.exit(ngx.HTTP_OK)
-    else
-      ngx.log(ngx.INFO, 'The token provided by RH-SSO saved successfully in 3scale backend')
-      send_token(token)
-    end
-  end
+  return jwt_obj
 end
 
--- Check valid params ( client_id / secret / redirect_url, whichever are sent) against 3scale
-local function check_client_credentials(params)
-
+-- Check client_id against 3scale
+local function check_client_id(params)
   local args = { 
-    app_id = params.client_id,
-    redirect_url = params.redirect_uri 
+    app_id = params.client_id
   }
-  if (params.client_secret) then
-    args.app_key = params.client_secret
-  end
-
   local res = ngx.location.capture("/_threescale/check_credentials", { args = args })
   local ok = res.status == 200
   return ok, res
 end
 
+local function oauth_error(error_description)
+  ngx.status = 401
+  ngx.header.content_type = "application/json; charset=utf-8"
+  ngx.print('{"error":"invalid_request","error_description":"'..error_description..'"}')
+  ngx.exit(ngx.HTTP_OK)
+end
+
 function _M.authorize()
   local params = ngx.req.get_uri_args()
 
-  -- Check Client ID and redirect URL against 3scale
-  local ok, res = check_client_credentials(params)
+  -- Check client_id against 3scale
+  local ok, res = check_client_id(params)
 
   if not ok then
-    ngx.status = res.status
-    ngx.header.content_type = "application/json; charset=utf-8"
-    ngx.print('{"error":"'..res.body..'"}')
-    ngx.exit(ngx.HTTP_OK)
+    oauth_error(res.body)
   end
 end
 
 function _M.get_token()
   local params = extract_params()
 
-  -- Check Client ID, Client Secret and redirect URL against 3scale
-  local is_valid = check_client_credentials(params)
+  -- Check Client ID against 3scale
+  local ok, res = check_client_id(params)
 
-  if is_valid then
-    -- Get token through RH-SSO
-    get_token_idp(params)
-  else
-    ngx.status = 401
-    ngx.header.content_type = "application/json; charset=utf-8"
-    ngx.print('{"error":"invalid_client"}')
-    ngx.exit(ngx.HTTP_OK)
+  if not ok then
+    oauth_error(res.body)
   end
+end
+
+function _M.get_credentials_from_token(service)
+  -- As per RFC6750 (https://tools.ietf.org/html/rfc6750) the access_token is extracted from (in this order):
+  -- 1) Authorization header if Bearer scheme is used
+  -- 2) request body if content-type is application/x-www-form-urlencoded
+  -- 3) URI query parameter
+
+  local access_token
+
+  if ngx.var.http_authorization then
+    access_token = string.match(ngx.var.http_authorization, "^Bearer%s*(.*)$")
+  end
+
+  if not access_token and ngx.var.http_content_type == "application/x-www-form-urlencoded" then
+    ngx.req.read_body()
+    access_token = ngx.req.get_post_args().access_token
+  end
+
+  if not access_token then
+    access_token = ngx.req.get_uri_args().access_token
+  end
+
+  if not access_token then
+    return { access_token = nil }
+  end
+
+  -- Parse the JWT token, validate it and extract client_id from it
+  local jwt_obj = parse_and_verify_token(service, access_token)
+  local client_id = jwt_obj.payload.aud
+
+  -- NOTE: the credentials of the application extracted and used for authenticating in 3scale is client_id (app_id), 
+  -- however it is referred to as access_token to allow reusing most of the nginx_XXXX.lua code
+  return { access_token = client_id }
 end
 
 return _M

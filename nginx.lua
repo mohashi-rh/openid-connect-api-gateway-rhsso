@@ -3,7 +3,7 @@ local custom_config = false
 
 local _M = {
   ['services'] = {
-    ['CHANGE_ME_SERVICE_ID'] = {
+    ['YOUR_SERVICE_ID'] = {
       error_auth_failed = 'Authentication failed',
       error_auth_missing = 'Authentication parameters missing',
       auth_failed_headers = 'text/plain; charset=us-ascii',
@@ -13,7 +13,7 @@ local _M = {
       no_match_status = 404,
       auth_failed_status = 403,
       auth_missing_status = 403,
-      secret_token = 'Shared_secret_sent_from_proxy_to_API_backend_CHANGE_ME',
+      secret_token = 'YOUR_SHARED_SECRET',
       get_credentials = function(service, params)
         return (
             (params.access_token or params.authorization)
@@ -165,7 +165,7 @@ end
 
 function get_debug_value()
   local h = ngx.req.get_headers()
-  if h["X-3scale-debug"] == 'CHANGE_ME_PROVIDER_KEY' then
+  if h["X-3scale-debug"] == 'YOUR_PROVIDER_KEY' then
     return true
   else
     return false
@@ -239,21 +239,23 @@ function _M.access()
     ngx.exit(403)
   end
 
-  if ngx.var.service_id == 'CHANGE_ME_SERVICE_ID' then
-  local parameters = get_auth_params("CHANGE_ME_AUTH_PARAMS_LOCATION", string.split(ngx.var.request, " ")[1] )
-  service = _M.services['CHANGE_ME_SERVICE_ID'] --
+  if ngx.var.service_id == 'YOUR_SERVICE_ID' then
+  -- local parameters = get_auth_params("YOUR_AUTH_PARAMS_LOCATION", string.split(ngx.var.request, " ")[1] ) -- CHANGE_ME: comment out this line
+  service = _M.services['YOUR_SERVICE_ID'] --
+  local parameters = require('oauth').get_credentials_from_token(service) -- CHANGE_ME: add this line
   ngx.var.secret_token = service.secret_token
   ngx.var.access_token = parameters.access_token
   params.access_token = parameters.access_token
   service.get_credentials(service , params)
-  ngx.var.cached_key = "CHANGE_ME_SERVICE_ID" .. ":" .. params.access_token
+  ngx.var.cached_key = "YOUR_SERVICE_ID" .. ":" .. params.access_token
   auth_strat = "oauth"
-  ngx.var.service_id = "CHANGE_ME_SERVICE_ID"
-  ngx.var.proxy_pass = "https://backend_CHANGE_ME_SERVICE_ID"
+  ngx.var.service_id = "YOUR_SERVICE_ID"
+  ngx.var.proxy_pass = "https://backend_YOUR_SERVICE_ID"
   usage, matched_patterns = service:extract_usage(ngx.var.request)
 end
 
-
+  params.app_id = params.access_token -- CHANGE_ME: add this line
+  params.access_token = nil -- CHANGE_ME: add this line
   ngx.var.credentials = build_query(params)
   ngx.var.usage = build_querystring(usage)
 
