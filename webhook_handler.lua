@@ -67,7 +67,7 @@ end
 local function update_client(client_details)
   local client_id = client_details.client_id
   ngx.var.access_token = get_access_token(client_id)
-  ngx.var.registration_url = rhsso. client_registrations_url..'/'..client_id
+  ngx.var.registration_url = rhsso.client_registrations_url..'/'..client_id
   local method = ngx.HTTP_PUT
   client_registration_request(method, client_details)
 end
