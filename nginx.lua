@@ -1,52 +1,91 @@
+-- provider_key: 1aa18c7b4012337e73a947306e7c8dcf --
+-- https://api-2445581805015.staging.apicast.io:443 http://192.168.100.1:8282 2555417737937 192.168.100.1 --
+-- -*- mode: lua; -*-
+-- Generated on: 2017-02-20 14:52:16 +0000 --
+-- Version:
+-- Error Messages per service
+
 
 local custom_config = false
 
 local _M = {
   ['services'] = {
-    ['YOUR_SERVICE_ID'] = {
-      error_auth_failed = 'Authentication failed',
-      error_auth_missing = 'Authentication parameters missing',
-      auth_failed_headers = 'text/plain; charset=us-ascii',
-      auth_missing_headers = 'text/plain; charset=us-ascii',
-      error_no_match = 'No Mapping Rule matched',
-      no_match_headers = 'text/plain; charset=us-ascii',
-      no_match_status = 404,
-      auth_failed_status = 403,
-      auth_missing_status = 403,
-      secret_token = 'YOUR_SHARED_SECRET',
-      get_credentials = function(service, params)
-        return (
-            (params.access_token or params.authorization)
-        ) or error_no_credentials(service)
-      end,
-      extract_usage = function (service, request)
-        local method, url = unpack(string.split(request," "))
-        local path, querystring = unpack(string.split(url, "?"))
-        local usage_t =  {}
-        local matched_rules = {}
+['2555417737937'] = {
+  error_auth_failed = 'Authentication failed',
+  error_auth_missing = 'Authentication parameters missing',
+  auth_failed_headers = 'text/plain; charset=us-ascii',
+  auth_missing_headers = 'text/plain; charset=us-ascii',
+  error_no_match = 'No Mapping Rule matched',
+  no_match_headers = 'text/plain; charset=us-ascii',
+  no_match_status = 404,
+  auth_failed_status = 403,
+  auth_missing_status = 403,
+  secret_token = 'Shared_secret_sent_from_proxy_to_API_backend_3766941312f4fa9d',
+  get_credentials = function(service, params)
+    return (
+        (params.access_token or params.authorization)
+    ) or error_no_credentials(service)
+  end,
+  extract_usage = function (service, request)
+    local method, url = unpack(string.split(request," "))
+    local path, querystring = unpack(string.split(url, "?"))
+    local usage_t =  {}
+    local matched_rules = {}
 
-        local args = get_auth_params(nil, method)
+    local args = get_auth_params(nil, method)
 
-        for i,r in ipairs(service.rules) do
-          check_rule({path=path, method=method, args=args}, r, usage_t, matched_rules)
-        end
+    for i,r in ipairs(service.rules) do
+      check_rule({path=path, method=method, args=args}, r, usage_t, matched_rules)
+    end
 
-        -- if there was no match, usage is set to nil and it will respond a 404, this behavior can be changed
-        return usage_t, table.concat(matched_rules, ", ")
-      end,
-      rules = {
+    -- if there was no match, usage is set to nil and it will respond a 404, this behavior can be changed
+    return usage_t, table.concat(matched_rules, ", ")
+  end,
+  rules = {
         {
-          method = 'GET',
-          pattern = '/',
-          parameters = {  },
-          querystring_params = function(args)
-            return true
-          end,
-          system_name = 'hits',
-          delta = 1
-        }
-      }
-    }
+      method = 'GET',
+      pattern = '/cxf/rest/pessoa',
+      parameters = {  },
+      querystring_params = function(args)
+        return true
+      end,
+      system_name = 'hits',
+      delta = 1
+    },
+    {
+      method = 'POST',
+      pattern = '/cxf/rest/pessoa',
+      parameters = {  },
+      querystring_params = function(args)
+        return true
+      end,
+      system_name = 'hits',
+      delta = 1
+    },
+    {
+      method = 'POST',
+      pattern = '/cxf/soap/customerWS',
+      parameters = {  },
+      querystring_params = function(args)
+        return true
+      end,
+      system_name = 'hits',
+      delta = 1
+    },
+    {
+      method = 'POST',
+      pattern = '/cxf/soap/customerWS',
+      parameters = {  },
+      querystring_params = function(args)
+        return true
+      end,
+      system_name = 'hits',
+      delta = 1
+    },
+
+  }
+},
+
   }
 }
 
@@ -165,7 +204,7 @@ end
 
 function get_debug_value()
   local h = ngx.req.get_headers()
-  if h["X-3scale-debug"] == 'YOUR_PROVIDER_KEY' then
+  if h["X-3scale-debug"] == '1aa18c7b4012337e73a947306e7c8dcf' then
     return true
   else
     return false
@@ -239,18 +278,18 @@ function _M.access()
     ngx.exit(403)
   end
 
-  if ngx.var.service_id == 'YOUR_SERVICE_ID' then
-  -- local parameters = get_auth_params("YOUR_AUTH_PARAMS_LOCATION", string.split(ngx.var.request, " ")[1] ) -- CHANGE_ME: comment out this line
-  service = _M.services['YOUR_SERVICE_ID'] --
+  if ngx.var.service_id == '2555417737937' then
+  -- local parameters = get_auth_params("headers", string.split(ngx.var.request, " ")[1] )
+  service = _M.services['2555417737937'] --
   local parameters = require('oauth').get_credentials_from_token(service) -- CHANGE_ME: add this line
   ngx.var.secret_token = service.secret_token
   ngx.var.access_token = parameters.access_token
   params.access_token = parameters.access_token
   service.get_credentials(service , params)
-  ngx.var.cached_key = "YOUR_SERVICE_ID" .. ":" .. params.access_token
+  ngx.var.cached_key = "2555417737937" .. ":" .. params.access_token
   auth_strat = "oauth"
-  ngx.var.service_id = "YOUR_SERVICE_ID"
-  ngx.var.proxy_pass = "https://backend_YOUR_SERVICE_ID"
+  ngx.var.service_id = "2555417737937"
+  ngx.var.proxy_pass = "http://backend_2555417737937"
   usage, matched_patterns = service:extract_usage(ngx.var.request)
 end
 
